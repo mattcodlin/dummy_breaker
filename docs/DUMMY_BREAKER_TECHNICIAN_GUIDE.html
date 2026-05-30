@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEL-551 Dummy Circuit Breaker — Technician Guide</title>
+<style>
+  :root {
+    --blue-dark: #1a3a5c;
+    --blue-mid:  #2563a8;
+    --blue-light:#e8f0fb;
+    --green:     #1a7a2e;
+    --green-bg:  #eafbee;
+    --red:       #9b1c1c;
+    --red-bg:    #fef2f2;
+    --amber:     #92400e;
+    --amber-bg:  #fffbeb;
+    --grey-light:#f4f6f8;
+    --grey-mid:  #d1d5db;
+    --grey-dark: #374151;
+    --text:      #111827;
+    --radius:    6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; color: var(--text); background: #fff; line-height: 1.6; }
+
+  /* ── Header ── */
+  header { background: var(--blue-dark); color: #fff; padding: 2rem 2rem 1.5rem; }
+  header h1 { font-size: 1.6rem; font-weight: 700; }
+  header .meta { margin-top: .5rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  header .meta span { font-size: .85rem; opacity: .85; }
+  header .meta span strong { color: #93c5fd; }
+
+  /* ── Nav ── */
+  nav { background: var(--blue-mid); position: sticky; top: 0; z-index: 100; }
+  nav ul { list-style: none; display: flex; flex-wrap: wrap; padding: 0 1rem; }
+  nav a { color: #dbeafe; text-decoration: none; font-size: .78rem; padding: .55rem .6rem; display: block; }
+  nav a:hover { color: #fff; background: rgba(255,255,255,.15); }
+
+  /* ── Layout ── */
+  main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  section { margin-bottom: 3rem; }
+  h2 { font-size: 1.25rem; color: var(--blue-dark); border-bottom: 2px solid var(--blue-mid); padding-bottom: .4rem; margin-bottom: 1.2rem; }
+  h3 { font-size: 1rem; color: var(--grey-dark); margin: 1.4rem 0 .6rem; font-weight: 600; }
+  p { margin-bottom: .8rem; }
+  ul, ol { padding-left: 1.4rem; margin-bottom: .8rem; }
+  li { margin-bottom: .3rem; }
+
+  /* ── Callout boxes ── */
+  .note { background: var(--blue-light); border-left: 4px solid var(--blue-mid); border-radius: var(--radius); padding: .8rem 1rem; margin: 1rem 0; font-size: .9rem; }
+  .warn { background: var(--amber-bg); border-left: 4px solid #d97706; border-radius: var(--radius); padding: .8rem 1rem; margin: 1rem 0; font-size: .9rem; }
+  .step-list { counter-reset: steps; list-style: none; padding-left: 0; }
+  .step-list li { counter-increment: steps; display: flex; gap: .8rem; align-items: flex-start; margin-bottom: .5rem; }
+  .step-list li::before { content: counter(steps); min-width: 1.6rem; height: 1.6rem; background: var(--blue-mid); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; flex-shrink: 0; margin-top: .1rem; }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; margin: 1rem 0; }
+  th { background: var(--blue-dark); color: #fff; padding: .55rem .8rem; text-align: left; font-weight: 600; }
+  td { padding: .5rem .8rem; border-bottom: 1px solid var(--grey-mid); }
+  tr:nth-child(even) td { background: var(--grey-light); }
+  td code, th code { font-family: 'Courier New', monospace; font-size: .9em; background: rgba(0,0,0,.08); padding: .1em .35em; border-radius: 3px; }
+
+  /* ── Code blocks ── */
+  pre { background: #1e2a38; color: #cbd5e1; border-radius: var(--radius); padding: 1rem 1.2rem; font-size: .83rem; overflow-x: auto; margin: .8rem 0; }
+  code { font-family: 'Courier New', monospace; font-size: .88em; }
+
+  /* ── LCD display ── */
+  .lcd-wrap { display: flex; flex-wrap: wrap; gap: 1.2rem; margin: 1rem 0; }
+  .lcd-panel { display: inline-block; }
+  .lcd-label { font-size: .75rem; color: #6b7280; text-align: center; margin-bottom: .35rem; }
+  .lcd { background: #2d4a1e; border: 3px solid #6b7280; border-radius: 5px; padding: 10px 14px; box-shadow: inset 0 0 12px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.25); }
+  .lcd-row { font-family: 'Courier New', monospace; font-size: 1rem; color: #a3e635; letter-spacing: .12em; white-space: pre; width: 16ch; line-height: 1.8; }
+  .lcd-row.blank { color: transparent; }
+
+  /* ── LED indicators ── */
+  .led-row { display: flex; align-items: center; gap: .7rem; margin: .4rem 0; }
+  .led { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); flex-shrink: 0; }
+  .led-red-on  { background: radial-gradient(circle at 35% 35%, #ff6b6b, #c00); box-shadow: 0 0 6px #f00; }
+  .led-red-off { background: radial-gradient(circle at 35% 35%, #6b3030, #3a0000); }
+  .led-grn-on  { background: radial-gradient(circle at 35% 35%, #6bff8a, #0a8a00); box-shadow: 0 0 6px #0f0; }
+  .led-grn-off { background: radial-gradient(circle at 35% 35%, #1a4a1e, #0a1f0a); }
+  .led-amb-on  { background: radial-gradient(circle at 35% 35%, #fde68a, #d97706); box-shadow: 0 0 6px #f59e0b; }
+  .led-amb-off { background: radial-gradient(circle at 35% 35%, #3d2800, #1c1200); }
+
+  /* ── Timing diagram ── */
+  .timing-svg { width: 100%; max-width: 680px; display: block; margin: 1rem auto; }
+
+  /* ── Wiring SVG ── */
+  .wiring-svg { width: 100%; max-width: 720px; display: block; margin: 1rem auto; }
+  .svg-wrap { background: var(--grey-light); border-radius: var(--radius); padding: 1rem; margin: 1rem 0; }
+
+  /* ── Inline badges ── */
+  .badge { display: inline-block; padding: .15em .5em; border-radius: 3px; font-size: .8em; font-weight: 600; vertical-align: middle; }
+  .badge-in  { background: #dbeafe; color: #1e3a8a; }
+  .badge-out { background: #dcfce7; color: #14532d; }
+  .badge-closed { background: #dcfce7; color: #14532d; }
+  .badge-open   { background: #fee2e2; color: #7f1d1d; }
+
+  /* ── Delay table ── */
+  .delay-table td:nth-child(2) { font-family: 'Courier New', monospace; }
+
+  @media (max-width: 600px) {
+    header h1 { font-size: 1.2rem; }
+    .lcd-row { font-size: .85rem; }
+    nav a { font-size: .72rem; padding: .45rem .45rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SEL-551 Dummy Circuit Breaker</h1>
+  <div class="meta">
+    <span><strong>Settings version:</strong> DUMMY_CB_V0.6</span>
+    <span><strong>Relay:</strong> SEL-551</span>
+    <span><strong>System frequency:</strong> 50 Hz</span>
+  </div>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#overview">1. Overview</a></li>
+    <li><a href="#hardware">2. Hardware</a></li>
+    <li><a href="#wiring">3. Wiring</a></li>
+    <li><a href="#loading">4. Loading Settings</a></li>
+    <li><a href="#operation">5. Operation</a></li>
+    <li><a href="#antipump">6. Anti-Pumping</a></li>
+    <li><a href="#display">7. Display</a></li>
+    <li><a href="#leds">8. LEDs</a></li>
+    <li><a href="#timing">9. Adjusting Delay</a></li>
+    <li><a href="#localctrl">10. Local Controls</a></li>
+    <li><a href="#springcharge">11. Spring Charge</a></li>
+    <li><a href="#ser">12. Event Records</a></li>
+    <li><a href="#notes">13. Notes</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<!-- ═══════════════════════════════════════════════════════ 1. OVERVIEW -->
+<section id="overview">
+  <h2>1. What is a Dummy Circuit Breaker?</h2>
+  <p>A dummy circuit breaker is used for relay testing, when a realistic representation of a high voltage circuit breaker is required.</p>
+  <p>Normally when testing a protection relay with an Omicron test set (or similar), the test set injects fault current and times how long the relay takes to assert its trip output, and then immediately stops the injected current. Modern relays are becoming more 'clever' and in some cases, they will trigger an error or behave unexpectedly when they see the fault current stopped more quickly than expected. A real circuit breaker takes 50–150 ms to open after receiving a trip command.</p>
+  <p>A dummy circuit breaker is also used when testing some functionaity such as auto reclose, where the state of the circuit breaker needs to remain consistent between tests, like a real circuit breaker will.</p>
+  <p>This SEL-551 is configured to simulate a real circuit breaker by acting as a latching relay, and implementing breaker opening and closing delay. The relay-under-test and test set see it as a real circuit breaker.</p>
+
+  <div style="display:flex; flex-wrap:wrap; gap:1rem; margin-top:1rem;">
+    <div class="note" style="flex:1; min-width:200px;">
+      <strong>Trip (IN1 → OUT1 opens)</strong><br>
+      Receives trip command → waits <strong>100 ms</strong> → opens 52A contact
+    </div>
+    <div class="note" style="flex:1; min-width:200px;">
+      <strong>Close (IN2 → OUT1 closes)</strong><br>
+      Receives close command → waits <strong>100 ms</strong> → closes 52A contact
+    </div>
+    <div class="note" style="flex:1; min-width:200px;">
+      <strong>Single delay setting</strong><br>
+      <code>SV5PU</code> controls both open and close delay — one value to set
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════ 2. HARDWARE -->
+<section id="hardware">
+  <h2>2. Hardware Requirements</h2>
+  <table>
+    <tr><th>Item</th><th>Details</th></tr>
+    <tr><td>Relay</td><td>SEL-551 (base model: 2 inputs IN1/IN2, 4 outputs OUT1–OUT4)</td></tr>
+    <tr><td>Control power</td><td>DC supply as per relay nameplate — typically 24, 48, 110 or 125 Vdc</td></tr>
+    <tr><td>CT / VT connections</td><td><strong>None required.</strong> Do not connect CTs while configured as a dummy breaker.</td></tr>
+    <tr><td>Optional</td><td>External indicator lamps wired to OUT1–OUT4</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════ 3. WIRING -->
+<section id="wiring">
+  <h2>3. Wiring</h2>
+
+  <h3>3.1 Overview</h3>
+  <div class="svg-wrap">
+    <svg class="wiring-svg" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, sans-serif" font-size="12">
+
+      <!-- Relay body -->
+      <rect x="260" y="60" width="200" height="280" rx="6" fill="#1a3a5c" stroke="#2563a8" stroke-width="2"/>
+      <text x="360" y="85" text-anchor="middle" fill="white" font-size="13" font-weight="bold">SEL-551</text>
+      <text x="360" y="102" text-anchor="middle" fill="#93c5fd" font-size="11">DUMMY BREAKER</text>
+
+      <!-- Input terminals (left side of relay) -->
+      <!-- IN1+ -->
+      <rect x="260" y="120" width="40" height="22" rx="2" fill="#1e40af" stroke="#60a5fa" stroke-width="1"/>
+      <text x="280" y="135" text-anchor="middle" fill="white" font-size="10" font-weight="bold">IN1+</text>
+      <!-- IN1- -->
+      <rect x="260" y="148" width="40" height="22" rx="2" fill="#1e3a5c" stroke="#60a5fa" stroke-width="1"/>
+      <text x="280" y="163" text-anchor="middle" fill="#93c5fd" font-size="10">IN1−</text>
+      <!-- IN2+ -->
+      <rect x="260" y="185" width="40" height="22" rx="2" fill="#1e40af" stroke="#60a5fa" stroke-width="1"/>
+      <text x="280" y="200" text-anchor="middle" fill="white" font-size="10" font-weight="bold">IN2+</text>
+      <!-- IN2- -->
+      <rect x="260" y="213" width="40" height="22" rx="2" fill="#1e3a5c" stroke="#60a5fa" stroke-width="1"/>
+      <text x="280" y="228" text-anchor="middle" fill="#93c5fd" font-size="10">IN2−</text>
+
+      <!-- Output terminals (right side of relay) -->
+      <!-- OUT1+ -->
+      <rect x="420" y="120" width="40" height="22" rx="2" fill="#14532d" stroke="#4ade80" stroke-width="1"/>
+      <text x="440" y="135" text-anchor="middle" fill="white" font-size="10" font-weight="bold">OUT1+</text>
+      <!-- OUT1- -->
+      <rect x="420" y="148" width="40" height="22" rx="2" fill="#1a3a26" stroke="#4ade80" stroke-width="1"/>
+      <text x="440" y="163" text-anchor="middle" fill="#86efac" font-size="10">OUT1−</text>
+      <!-- OUT2+ -->
+      <rect x="420" y="185" width="40" height="22" rx="2" fill="#7f1d1d" stroke="#f87171" stroke-width="1"/>
+      <text x="440" y="200" text-anchor="middle" fill="white" font-size="10" font-weight="bold">OUT2+</text>
+      <!-- OUT2- -->
+      <rect x="420" y="213" width="40" height="22" rx="2" fill="#450a0a" stroke="#f87171" stroke-width="1"/>
+      <text x="440" y="228" text-anchor="middle" fill="#fca5a5" font-size="10">OUT2−</text>
+      <!-- OUT3 -->
+      <rect x="420" y="250" width="40" height="22" rx="2" fill="#451a03" stroke="#fb923c" stroke-width="1"/>
+      <text x="440" y="265" text-anchor="middle" fill="#fdba74" font-size="10">OUT3</text>
+      <!-- OUT4 -->
+      <rect x="420" y="278" width="40" height="22" rx="2" fill="#451a03" stroke="#fb923c" stroke-width="1"/>
+      <text x="440" y="293" text-anchor="middle" fill="#fdba74" font-size="10">OUT4</text>
+
+      <!-- ── Left side connections ── -->
+      <!-- DC+ bus vertical line on left -->
+      <line x1="80" y1="100" x2="80" y2="350" stroke="#ef4444" stroke-width="2" stroke-dasharray="none"/>
+      <text x="80" y="92" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="bold">DC+</text>
+
+      <!-- DC- bus vertical line on left -->
+      <line x1="110" y1="100" x2="110" y2="350" stroke="#6b7280" stroke-width="2"/>
+      <text x="110" y="92" text-anchor="middle" fill="#6b7280" font-size="11" font-weight="bold">DC−</text>
+
+      <!-- IN1+ wire: DC+ → (through Relay trip contact) → IN1+ -->
+      <line x1="80" y1="131" x2="130" y2="131" stroke="#ef4444" stroke-width="1.5"/>
+      <!-- Trip contact symbol -->
+      <line x1="130" y1="125" x2="130" y2="137" stroke="#374151" stroke-width="2"/>
+      <line x1="145" y1="125" x2="145" y2="137" stroke="#374151" stroke-width="2"/>
+      <line x1="130" y1="125" x2="145" y2="131" stroke="#374151" stroke-width="1.5" stroke-dasharray="2,2"/>
+      <text x="137" y="118" text-anchor="middle" fill="#374151" font-size="9">TRIP OUT</text>
+      <text x="137" y="149" text-anchor="middle" fill="#374151" font-size="8">(Relay)</text>
+      <line x1="145" y1="131" x2="260" y2="131" stroke="#ef4444" stroke-width="1.5"/>
+
+      <!-- IN1- wire: DC- → IN1- -->
+      <line x1="110" y1="159" x2="260" y2="159" stroke="#6b7280" stroke-width="1.5"/>
+
+      <!-- IN2+ wire: DC+ → (through close contact) → IN2+ -->
+      <line x1="80" y1="196" x2="130" y2="196" stroke="#ef4444" stroke-width="1.5"/>
+      <!-- Close contact symbol -->
+      <line x1="130" y1="190" x2="130" y2="202" stroke="#374151" stroke-width="2"/>
+      <line x1="145" y1="190" x2="145" y2="202" stroke="#374151" stroke-width="2"/>
+      <line x1="130" y1="190" x2="145" y2="196" stroke="#374151" stroke-width="1.5" stroke-dasharray="2,2"/>
+      <text x="137" y="183" text-anchor="middle" fill="#374151" font-size="9">CLOSE CMD</text>
+      <text x="137" y="213" text-anchor="middle" fill="#374151" font-size="8">(Relay/Test set/PB)</text>
+      <line x1="145" y1="196" x2="260" y2="196" stroke="#ef4444" stroke-width="1.5"/>
+
+      <!-- IN2- wire: DC- → IN2- -->
+      <line x1="110" y1="224" x2="260" y2="224" stroke="#6b7280" stroke-width="1.5"/>
+
+      <!-- ── Right side connections ── -->
+      <!-- OUT1+ → 52A label -->
+      <line x1="460" y1="131" x2="570" y2="131" stroke="#4ade80" stroke-width="1.5"/>
+      <rect x="570" y="118" width="110" height="26" rx="3" fill="#14532d" stroke="#4ade80" stroke-width="1"/>
+      <text x="625" y="129" text-anchor="middle" fill="white" font-size="9" font-weight="bold">52A to Relay / test set</text>
+      <text x="625" y="141" text-anchor="middle" fill="#86efac" font-size="8">supervision voltage (+)</text>
+
+      <!-- OUT1- → common -->
+      <line x1="460" y1="159" x2="570" y2="159" stroke="#86efac" stroke-width="1.5"/>
+      <text x="600" y="163" fill="#4b5563" font-size="9">52A common</text>
+
+      <!-- OUT2+ → 52B label -->
+      <line x1="460" y1="196" x2="570" y2="196" stroke="#f87171" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <rect x="570" y="183" width="110" height="26" rx="3" fill="#7f1d1d" stroke="#f87171" stroke-width="1" opacity="0.7"/>
+      <text x="625" y="196" text-anchor="middle" fill="white" font-size="9">52B to Relay (if req'd)</text>
+      <text x="625" y="207" text-anchor="middle" fill="#fca5a5" font-size="8">optional</text>
+
+      <!-- OUT2- -->
+      <line x1="460" y1="224" x2="570" y2="224" stroke="#fca5a5" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="600" y="228" fill="#9ca3af" font-size="9">52B common</text>
+
+      <!-- OUT3/OUT4 → lamps -->
+      <line x1="460" y1="261" x2="545" y2="261" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <line x1="460" y1="289" x2="545" y2="289" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <!-- lamp circles -->
+      <circle cx="558" cy="261" r="10" fill="#451a03" stroke="#fb923c" stroke-width="1.5" opacity="0.7"/>
+      <text x="558" y="265" text-anchor="middle" fill="#fdba74" font-size="8">⚡</text>
+      <circle cx="558" cy="289" r="10" fill="#451a03" stroke="#fb923c" stroke-width="1.5" opacity="0.7"/>
+      <text x="558" y="293" text-anchor="middle" fill="#fdba74" font-size="8">⚡</text>
+      <text x="575" y="265" fill="#9ca3af" font-size="9">Indicator lamps</text>
+      <text x="575" y="279" fill="#9ca3af" font-size="9">(optional)</text>
+
+      <!-- Legend -->
+      <rect x="8" y="308" width="230" height="80" rx="4" fill="white" stroke="#d1d5db" stroke-width="1"/>
+      <text x="18" y="323" fill="#374151" font-size="10" font-weight="bold">Legend</text>
+      <line x1="18" y1="334" x2="48" y2="334" stroke="#ef4444" stroke-width="2"/>
+      <text x="54" y="338" fill="#374151" font-size="9">DC positive</text>
+      <line x1="18" y1="348" x2="48" y2="348" stroke="#6b7280" stroke-width="2"/>
+      <text x="54" y="352" fill="#374151" font-size="9">DC negative / common</text>
+      <line x1="18" y1="362" x2="48" y2="362" stroke="#4ade80" stroke-width="2"/>
+      <text x="54" y="366" fill="#374151" font-size="9">52A output (primary)</text>
+      <line x1="18" y1="376" x2="48" y2="376" stroke="#fb923c" stroke-width="2" stroke-dasharray="4,2"/>
+      <text x="54" y="380" fill="#374151" font-size="9">Optional connections</text>
+    </svg>
+  </div>
+
+  <h3>3.2 Control Power</h3>
+  <p>Connect DC control power to the relay power supply terminals per the relay nameplate. Observe correct polarity.</p>
+
+  <h3>3.3 IN1 — Trip Command Input</h3>
+  <p>IN1 is wired so that when the relay-under-test closes its trip output contact, IN1 asserts and the dummy breaker starts its 100 ms opening timer.</p>
+  <div class="svg-wrap">
+    <svg viewBox="0 0 580 100" style="width:100%;max-width:580px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="12">
+      <!-- DC+ -->
+      <text x="10" y="40" fill="#ef4444" font-weight="bold">DC(+)</text>
+      <line x1="55" y1="36" x2="130" y2="36" stroke="#ef4444" stroke-width="2"/>
+      <!-- Relay trip contact -->
+      <line x1="130" y1="28" x2="130" y2="44" stroke="#374151" stroke-width="2"/>
+      <line x1="155" y1="28" x2="155" y2="44" stroke="#374151" stroke-width="2"/>
+      <line x1="130" y1="28" x2="155" y2="36" stroke="#374151" stroke-width="1.5" stroke-dasharray="3,2"/>
+      <text x="142" y="60" text-anchor="middle" fill="#374151" font-size="10">Relay TRIP output</text>
+      <text x="142" y="72" text-anchor="middle" fill="#374151" font-size="9">(N/O contact)</text>
+      <line x1="155" y1="36" x2="370" y2="36" stroke="#ef4444" stroke-width="2"/>
+      <!-- Also test set tap -->
+      <line x1="240" y1="36" x2="240" y2="72" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="240" y="88" text-anchor="middle" fill="#6b7280" font-size="9">Test set monitor (optional, parallel)</text>
+      <!-- IN1+ terminal -->
+      <rect x="370" y="25" width="50" height="22" rx="2" fill="#1e40af" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="395" y="40" text-anchor="middle" fill="white" font-size="11" font-weight="bold">IN1(+)</text>
+      <!-- IN1- -->
+      <rect x="370" y="55" width="50" height="22" rx="2" fill="#1e3a5c" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="395" y="70" text-anchor="middle" fill="#93c5fd" font-size="11">IN1(−)</text>
+      <!-- DC- -->
+      <line x1="420" y1="66" x2="490" y2="66" stroke="#6b7280" stroke-width="2"/>
+      <text x="500" y="70" fill="#6b7280" font-weight="bold">DC(−)</text>
+    </svg>
+  </div>
+
+  <h3>3.4 IN2 — Close Command Input</h3>
+  <p>Connect one or more of the following in parallel to IN2:</p>
+  <ul>
+    <li>Relay-under-test CLOSE output (if autorecloser or close output exists)</li>
+    <li>Test set CLOSE output / timing channel output</li>
+    <li>External push button (normally open, momentary or maintained)</li>
+  </ul>
+
+  <h3>3.5 OUT1 — 52A Contact (Primary Output)</h3>
+  <p>Normally open dry contact. <strong>CLOSED (makes) when the breaker is CLOSED; OPEN (breaks) when the breaker is OPEN.</strong></p>
+  <div class="note">On the connectorised SEL-551, OUT1 is polarity-dependent. Terminal A02 must be (+) relative to A01.</div>
+
+  <h3>3.6 OUT2 — 52B Contact (Optional)</h3>
+  <p>Complement of OUT1. CLOSED when breaker is OPEN. Connect to the relay-under-test's 52B input if required.</p>
+
+  <h3>3.7 OUT3 / OUT4 — Indicator Outputs (Optional)</h3>
+  <table>
+    <tr><th>Output</th><th>Active when</th><th>Typical use</th></tr>
+    <tr><td><code>OUT3</code></td><td>Spring charge inhibit active (15 s block after a CO operation)</td><td>Amber lamp — "SPRING CHG"</td></tr>
+    <tr><td><code>OUT4</code></td><td>Opening or closing delay running</td><td>Amber lamp — "OPERATING"</td></tr>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ 4. LOADING -->
+<section id="loading">
+  <h2>4. Loading Settings</h2>
+  <p>Settings files are in the <code>DUMMY_CB_V0.6/</code> folder:</p>
+  <table>
+    <tr><th>File</th><th>Contents</th></tr>
+    <tr><td><code>SET_1.TXT</code></td><td>Relay element settings — all protection OFF; SV5PU, SV6PU, SV7DO, SV8DO timers set</td></tr>
+    <tr><td><code>SET_L.TXT</code></td><td>SELOGIC control equations</td></tr>
+    <tr><td><code>SET_T.TXT</code></td><td>Display labels</td></tr>
+    <tr><td><code>SET_R.TXT</code></td><td>Sequential Events Recorder</td></tr>
+    <tr><td><code>SET_P1.TXT</code></td><td>Serial port — 19200 baud, 8N1</td></tr>
+  </table>
+
+  <h3>Via ACSELERATOR QuickSet</h3>
+  <ol class="step-list">
+    <li>Open ACSELERATOR QuickSet.</li>
+    <li>Open <code>SET_1.TXT</code> (or import the folder as a settings group).</li>
+    <li>Connect to the relay via serial port.</li>
+    <li>Send all settings groups: 1, L, T, R, P1.</li>
+    <li>Confirm no errors are reported.</li>
+  </ol>
+
+  <h3>Via Serial Terminal (PuTTY / HyperTerminal)</h3>
+  <ol class="step-list">
+    <li>Connect at 19200 baud, 8N1.</li>
+    <li>Log in at access level 2.</li>
+    <li>Use <code>SET 1</code>, <code>SET L</code>, <code>SET T</code>, <code>SET R</code> to enter settings.</li>
+    <li>Use <code>SHO 1</code>, <code>SHO L</code> to verify after entry.</li>
+  </ol>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 5. OPERATION -->
+<section id="operation">
+  <h2>5. Normal Operating Sequence</h2>
+
+  <h3>Power-On State</h3>
+  <p>The TRIP latch initialises to 0. The dummy breaker starts in the <strong>CLOSED</strong> state.</p>
+  <div class="lcd-wrap">
+    <div class="lcd-panel">
+      <div class="lcd-label">Power-on display</div>
+      <div class="lcd"><div class="lcd-row">CB CLOSED      </div><div class="lcd-row">OP/CL DLY SV5PU</div></div>
+    </div>
+  </div>
+
+  <h3>Trip Test Sequence</h3>
+
+  <!-- Timing diagram -->
+  <div class="svg-wrap">
+    <svg class="timing-svg" viewBox="0 0 660 210" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="11">
+
+      <text x="10" y="18" font-size="12" font-weight="bold" fill="#1a3a5c">Trip Test — Signal Timing</text>
+
+      <!-- Row labels -->
+      <text x="10" y="50"  fill="#374151">Fault current</text>
+      <text x="10" y="85"  fill="#374151">IN1 (trip cmd)</text>
+      <text x="10" y="120" fill="#374151">OUT1 (52A)</text>
+      <text x="10" y="155" fill="#374151">OUT3 (opening)</text>
+
+      <!-- Timeline base x=130, end x=640 -->
+      <!-- Fault current: starts at t=0, stops when OUT1 opens -->
+      <rect x="130" y="36" width="280" height="18" rx="2" fill="#fee2e2" stroke="#ef4444" stroke-width="1"/>
+      <text x="270" y="49" text-anchor="middle" fill="#7f1d1d" font-size="10">Fault injected by test set</text>
+      <line x1="410" y1="36" x2="410" y2="54" stroke="#ef4444" stroke-width="2"/>
+      <text x="430" y="49" fill="#374151" font-size="9">Test set stops</text>
+
+      <!-- IN1 asserts at t=200 (Relay protection time) -->
+      <rect x="130" y="71" width="200" height="18" rx="2" fill="#e8f0fb" stroke="#2563a8" stroke-width="1" opacity="0.4"/>
+      <text x="230" y="84" text-anchor="middle" fill="#6b7280" font-size="9">Relay operating…</text>
+      <rect x="330" y="71" width="80" height="18" rx="2" fill="#2563a8" stroke="#2563a8" stroke-width="1"/>
+      <text x="370" y="84" text-anchor="middle" fill="white" font-size="9">IN1 asserted</text>
+
+      <!-- OUT1: closed until t=330+80=410 -->
+      <rect x="130" y="106" width="280" height="18" rx="2" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+      <text x="270" y="119" text-anchor="middle" fill="#14532d" font-size="10">OUT1 CLOSED — Relay sees breaker CLOSED</text>
+      <rect x="410" y="106" width="230" height="18" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1"/>
+      <text x="525" y="119" text-anchor="middle" fill="#7f1d1d" font-size="10">OUT1 OPEN — breaker open</text>
+
+      <!-- OUT3 opening indicator: t=330 to t=410 -->
+      <rect x="330" y="141" width="80" height="18" rx="2" fill="#fef3c7" stroke="#d97706" stroke-width="1"/>
+      <text x="370" y="154" text-anchor="middle" fill="#78350f" font-size="9">OUT3 energised</text>
+
+      <!-- Vertical time markers -->
+      <line x1="130" y1="26" x2="130" y2="175" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4,2"/>
+      <line x1="330" y1="26" x2="330" y2="175" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4,2"/>
+      <line x1="410" y1="26" x2="410" y2="175" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+      <!-- Time axis -->
+      <line x1="130" y1="175" x2="640" y2="175" stroke="#374151" stroke-width="1.5"/>
+      <text x="130" y="188" text-anchor="middle" fill="#374151" font-size="10">t=0</text>
+      <text x="330" y="188" text-anchor="middle" fill="#374151" font-size="10">IN1 asserts</text>
+      <text x="410" y="188" text-anchor="middle" fill="#dc2626" font-size="10">+100 ms</text>
+      <text x="525" y="188" text-anchor="middle" fill="#374151" font-size="10">(breaker open)</text>
+
+      <!-- 100ms bracket -->
+      <line x1="330" y1="196" x2="410" y2="196" stroke="#374151" stroke-width="1.5"/>
+      <line x1="330" y1="192" x2="330" y2="200" stroke="#374151" stroke-width="1.5"/>
+      <line x1="410" y1="192" x2="410" y2="200" stroke="#374151" stroke-width="1.5"/>
+      <text x="370" y="209" text-anchor="middle" fill="#374151" font-size="10">100 ms delay (SV5PU)</text>
+    </svg>
+  </div>
+
+  <div class="note">The test set should monitor <strong>IN1</strong> as the "breaker open" signal as this will ensure it is measuring the actual relay timing, excluding the breaker delay.</div>
+
+  <h3>Resetting After a Trip Test</h3>
+  <ol class="step-list">
+    <li>If the Relay has a latching trip output, <strong>reset the Relay first</strong> so IN1 de-asserts. (See Section 6 — Anti-Pumping.)</li>
+    <li>Assert IN2 — press close button, or have the test set assert the close command.</li>
+    <li>After 100 ms the breaker closes and the display returns to the normal state.</li>
+  </ol>
+
+  <div class="lcd-wrap">
+    <div class="lcd-panel">
+      <div class="lcd-label">Breaker open (after trip)</div>
+      <div class="lcd"><div class="lcd-row">CB OPEN        </div><div class="lcd-row">OP/CL DLY SV5PU</div></div>
+    </div>
+    <div style="display:flex;align-items:center;font-size:1.5rem;color:#6b7280;padding-bottom:1rem;">→</div>
+    <div class="lcd-panel">
+      <div class="lcd-label">After close (IN2 + 100 ms)</div>
+      <div class="lcd"><div class="lcd-row">CB CLOSED      </div><div class="lcd-row">OP/CL DLY SV5PU</div></div>
+    </div>
+  </div>
+
+  <h3>Front-Panel Manual Reset</h3>
+  <p>If IN2 is unavailable, press <strong>TARGET RESET</strong> on the SEL-551 front panel. This directly unlatches the TRIP bit and closes the breaker immediately — <em>no 100 ms close delay</em>. Use for test reset only.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 6. ANTI-PUMP -->
+<section id="antipump">
+  <h2>6. Anti-Pumping Behaviour</h2>
+  <p>The dummy breaker will <strong>not</strong> accept a close command (IN2) while a trip command (IN1) is simultaneously asserted. This mirrors real breaker anti-pumping protection.</p>
+
+  <div style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start;margin:1rem 0;">
+    <div>
+      <div class="lcd-panel">
+        <div class="lcd-label">Anti-pump condition</div>
+        <div class="lcd"><div class="lcd-row">CB OPEN        </div><div class="lcd-row">ANTI PUMP      </div></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:240px;">
+      <p>Anti-pumping is enforced at two levels:</p>
+      <ul>
+        <li>The close timer can only run when <code>TRIP = 1</code> <em>and</em> <code>IN1 = 0</code>.</li>
+        <li>The unlatch equation <code>ULTR = SV5T * !IN1</code> cannot fire while IN1 is held.</li>
+      </ul>
+      <div class="warn"><strong>Practical:</strong> If the Relay holds its trip output latched after a fault, reset the Relay before attempting to close the dummy breaker.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 7. DISPLAY -->
+<section id="display">
+  <h2>7. Front-Panel LCD Display</h2>
+  <p>The display shows a <strong>single static 2-line screen</strong> — it does not rotate between multiple screens.</p>
+
+  <table>
+    <tr><th>Row</th><th>Content</th></tr>
+    <tr><td><strong>Top row</strong></td><td>Always shows current breaker state: <code>CB OPEN</code> or <code>CB CLOSED</code></td></tr>
+    <tr><td><strong>Bottom row</strong></td><td><code>ANTI PUMP</code> when IN1 and IN2 are both asserted with breaker open; otherwise <code>OP/CL DLY SV5PU</code></td></tr>
+  </table>
+
+  <div class="lcd-wrap" style="margin-top:1.2rem;">
+    <div class="lcd-panel">
+      <div class="lcd-label">Normal — breaker closed</div>
+      <div class="lcd"><div class="lcd-row">CB CLOSED      </div><div class="lcd-row">OP/CL DLY SV5PU</div></div>
+    </div>
+    <div class="lcd-panel">
+      <div class="lcd-label">Normal — breaker open</div>
+      <div class="lcd"><div class="lcd-row">CB OPEN        </div><div class="lcd-row">OP/CL DLY SV5PU</div></div>
+    </div>
+    <div class="lcd-panel">
+      <div class="lcd-label">Anti-pump active</div>
+      <div class="lcd"><div class="lcd-row">CB OPEN        </div><div class="lcd-row">ANTI PUMP      </div></div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:1rem;"><code>OP/CL DLY SV5PU</code> is a permanent label — it tells the technician which setting controls the delay. Look up <code>SV5PU</code> in SET_1.TXT to see or change the current value.</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 8. LEDs -->
+<section id="leds">
+  <h2>8. Indicator Lamps &amp; LEDs</h2>
+
+  <h3>8.1 Built-in Front-Panel LEDs</h3>
+  <table>
+    <tr><th>LED</th><th>State</th><th>Meaning</th></tr>
+    <tr>
+      <td>TRIP <span style="color:#dc2626">●</span></td>
+      <td><span class="badge badge-open">ON</span></td>
+      <td>Breaker is OPEN (TRIP latch set)</td>
+    </tr>
+    <tr>
+      <td>TRIP <span style="color:#9ca3af">○</span></td>
+      <td><span class="badge" style="background:#f3f4f6;color:#374151;">OFF</span></td>
+      <td>Breaker is CLOSED</td>
+    </tr>
+    <tr>
+      <td>ENABLED <span style="color:#16a34a">●</span></td>
+      <td><span class="badge badge-closed">ON</span></td>
+      <td>Relay is powered and healthy</td>
+    </tr>
+  </table>
+
+  <h3>8.2 External Indicator Lamps (Output Contacts)</h3>
+  <p>Wire indicator lamps to the output contacts for bench-level status at a glance. Recommended colours follow IEC convention for switchgear.</p>
+
+  <div style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start;margin:1rem 0;">
+    <!-- Lamp panel diagram -->
+    <div style="background:#1a1a2e;border-radius:8px;padding:1.2rem 1.5rem;min-width:200px;">
+      <div style="font-size:.75rem;color:#94a3b8;text-align:center;margin-bottom:1rem;letter-spacing:.05em;">INDICATOR PANEL</div>
+      <div class="led-row">
+        <div class="led led-grn-on"></div>
+        <span style="color:#e2e8f0;font-size:.9rem;font-family:monospace;">OUT1 — CB CLOSED</span>
+      </div>
+      <div class="led-row">
+        <div class="led led-red-on"></div>
+        <span style="color:#e2e8f0;font-size:.9rem;font-family:monospace;">OUT2 — CB OPEN</span>
+      </div>
+      <div class="led-row">
+        <div class="led led-amb-on"></div>
+        <span style="color:#e2e8f0;font-size:.9rem;font-family:monospace;">OUT3 — SPRING CHG</span>
+      </div>
+      <div class="led-row">
+        <div class="led led-amb-off"></div>
+        <span style="color:#64748b;font-size:.9rem;font-family:monospace;">OUT4 — OPERATING</span>
+      </div>
+    </div>
+    <!-- Table -->
+    <div style="flex:1;min-width:260px;">
+      <table>
+        <tr><th>Output</th><th>Lamp colour</th><th>Label</th><th>ON when</th></tr>
+        <tr><td><code>OUT1</code></td><td><span style="color:#16a34a;font-weight:600;">Green</span></td><td>CB CLOSED</td><td>Breaker is closed (normal service)</td></tr>
+        <tr><td><code>OUT2</code></td><td><span style="color:#dc2626;font-weight:600;">Red</span></td><td>CB OPEN</td><td>Breaker is open (tripped or racked out)</td></tr>
+        <tr><td><code>OUT3</code></td><td><span style="color:#d97706;font-weight:600;">Amber</span></td><td>SPRING CHG</td><td>15 s spring charge inhibit active after CO operation</td></tr>
+        <tr><td><code>OUT4</code></td><td><span style="color:#d97706;font-weight:600;">Amber</span></td><td>OPERATING</td><td>Opening or closing delay in progress</td></tr>
+      </table>
+      <div class="note" style="margin-top:.8rem;">OUT1 and OUT2 are complementary — exactly one is always ON. OUT3 (spring charging) overrides the close path; see Section 11.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 9. TIMING -->
+<section id="timing">
+  <h2>9. Adjusting the Time Delay</h2>
+  <p>A single setting — <code>SV5PU</code> in SET_1.TXT — controls both the opening and closing delay. They are always equal.</p>
+  <p>All timers are in <strong>cycles</strong> (1/8-cycle resolution). At 50 Hz: 1 cycle = 20 ms.</p>
+
+  <table class="delay-table">
+    <tr><th>Desired delay</th><th>SV5PU value</th></tr>
+    <tr><td>50 ms</td><td>2.500</td></tr>
+    <tr><td>83 ms</td><td>4.125</td></tr>
+    <tr><td>100 ms <span style="font-size:.8em;color:#6b7280">(default)</span></td><td>5.000</td></tr>
+    <tr><td>150 ms</td><td>7.500</td></tr>
+    <tr><td>200 ms</td><td>10.000</td></tr>
+  </table>
+
+  <h3>Method A — Via QuickSet or Serial Terminal</h3>
+  <ol class="step-list">
+    <li>Change <code>SV5PU</code> in SET_1.TXT to the desired cycle count.</li>
+    <li>Send updated settings to the relay (groups 1 and L).</li>
+  </ol>
+  <div class="note">No display label update is required — the bottom row always shows <code>OP/CL DLY SV5PU</code>, which refers to the setting name and remains accurate at any timer value.</div>
+
+  <h3>Method B — Via Relay Front-Panel Menu</h3>
+  <p>Settings can be changed directly from the relay front panel without a laptop:</p>
+  <ol class="step-list">
+    <li>Press <strong>SET</strong> (or navigate the front-panel menu to <em>Settings → Group 1</em>).</li>
+    <li>Press the right-arrow key to scroll through settings until <strong>SV5PU</strong> appears on the display.</li>
+    <li>Press <strong>SELECT</strong> (or <strong>ENTER</strong>). The current value is shown and the cursor becomes active.</li>
+    <li>Use the arrow keys to change the value to the desired cycle count (see table above).</li>
+    <li>Press <strong>SELECT</strong> to confirm. The relay will prompt for the access-level 2 password if not already logged in.</li>
+    <li>Confirm the new value is shown on the display.</li>
+  </ol>
+  <div class="warn"><strong>Note:</strong> After changing settings from the front panel, verify the change by reading back the setting. Some relay firmware versions require pressing <strong>END</strong> to save and exit the settings edit mode.</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ 10. LOCAL CONTROLS -->
+<section id="localctrl">
+  <h2>10. Front-Panel Local Controls</h2>
+  <p>There are two front-panel local control switches — <strong>MAN TRIP (LB1)</strong> and <strong>MAN CLOSE (LB2)</strong> — so the breaker can be tripped or closed from the relay front panel without any external wiring.</p>
+
+  <div class="note">LB1 and LB2 are configured as <strong>momentary (type M)</strong> switches. Pressing SELECT briefly pulses the local bit for one processing interval, then it automatically returns. This is equivalent to a momentary push button press.</div>
+
+  <h3>Accessing Local Controls</h3>
+  <ol class="step-list">
+    <li><div>Press the <strong>CNTRL</strong> pushbutton on the relay front panel. The display shows:
+      <div class="lcd-wrap" style="margin:.5rem 0;">
+        <div class="lcd-panel"><div class="lcd"><div class="lcd-row">Press CNTRL for</div><div class="lcd-row">Local Control  </div></div></div>
+      </div>
+    </div></li>
+    <li><div>Press <strong>CNTRL</strong> again. The first local control switch is shown:
+      <div class="lcd-wrap" style="margin:.5rem 0;">
+        <div class="lcd-panel"><div class="lcd"><div class="lcd-row">MAN TRIP       </div><div class="lcd-row">RETURN         </div></div></div>
+      </div>
+    </div></li>
+    <li>Press <strong>RIGHT ARROW</strong> to scroll to the next switch (<code>MAN CLOSE</code>).</li>
+    <li><div>When the desired switch is shown, press <strong>SELECT</strong>. The display shows the operate prompt:
+      <div class="lcd-wrap" style="margin:.5rem 0;">
+        <div class="lcd-panel">
+          <div class="lcd-label">To trip the breaker</div>
+          <div class="lcd"><div class="lcd-row">MAN TRIP       </div><div class="lcd-row">No  Yes        </div></div>
+        </div>
+        <div class="lcd-panel">
+          <div class="lcd-label">To close the breaker</div>
+          <div class="lcd"><div class="lcd-row">MAN CLOSE      </div><div class="lcd-row">No  Yes        </div></div>
+        </div>
+      </div>
+    </div></li>
+    <li>Press <strong>LEFT ARROW</strong> to move the cursor to <strong>Yes</strong>.</li>
+    <li>Press <strong>SELECT</strong> to execute. The local bit fires momentarily and the breaker begins its 100 ms operating sequence.</li>
+  </ol>
+
+  <h3>Local Control Behaviour</h3>
+  <table>
+    <tr><th>Switch</th><th>SELOGIC bit</th><th>Effect</th><th>Anti-pump applies?</th></tr>
+    <tr><td>MAN TRIP (LB1)</td><td><code>LB1</code></td><td>Identical to asserting IN1 — starts 100 ms opening timer</td><td>—</td></tr>
+    <tr><td>MAN CLOSE (LB2)</td><td><code>LB2</code></td><td>Identical to asserting IN2 — starts 100 ms closing timer (if breaker open and 0.3 s dead time expired)</td><td>Yes — blocked if LB1 or IN1 active</td></tr>
+  </table>
+
+  <div class="warn"><strong>Spring charge:</strong> If MAN CLOSE is pressed within 15 s of a CO operation, the close will be blocked and OUT3 (SPRING CHG lamp) will be on. Wait for OUT3 to extinguish before closing. See Section 11.</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ 11. SPRING CHARGE -->
+<section id="springcharge">
+  <h2>11. Spring Charge Simulation</h2>
+  <p>Real HV circuit breakers use a spring-charged operating mechanism. After a Close–Open (CO) operation, the spring must recharge before the breaker can close again. The standard operating sequence for many HV breakers is:</p>
+
+  <div style="background:var(--blue-light);border:1.5px solid var(--blue-mid);border-radius:var(--radius);padding:1rem 1.5rem;margin:1rem 0;font-family:'Courier New',monospace;font-size:1.05rem;letter-spacing:.05em;text-align:center;">
+    O — 0.3 s — CO — 15 s — CO
+  </div>
+
+  <table style="margin:1rem 0;">
+    <tr><th>Symbol</th><th>Meaning</th></tr>
+    <tr><td><strong>O</strong></td><td>Open (trip). The breaker opens.</td></tr>
+    <tr><td><strong>0.3 s</strong></td><td>Dead time — minimum wait before first reclose attempt (arc de-ionisation time).</td></tr>
+    <tr><td><strong>CO</strong></td><td>Close then immediate Open. The breaker closes (reclose attempt) and, if the fault is still present, re-trips. This consumes one spring charge.</td></tr>
+    <tr><td><strong>15 s</strong></td><td>Spring recharge time — the motor must recharge the spring before the next close.</td></tr>
+    <tr><td><strong>CO</strong></td><td>Second reclose attempt. Final close; if it re-trips again the breaker locks out.</td></tr>
+  </table>
+
+  <h3>How the Dummy Breaker Simulates This</h3>
+  <table>
+    <tr><th>Timer</th><th>Setting</th><th>Function</th></tr>
+    <tr><td><code>SV6PU</code></td><td>15 cycles (0.3 s)</td><td>Dead-time timer. Starts when TRIP=1. Close is blocked until <code>SV6T=1</code>.</td></tr>
+    <tr><td><code>SV7DO</code></td><td>50 cycles (1 s)</td><td>Reclose memory window. <code>SV7T=1</code> for 1 s after the breaker closes. Used to detect a CO event (re-trip within 1 s of a close).</td></tr>
+    <tr><td><code>SV8DO</code></td><td>750 cycles (15 s)</td><td>Spring charge block. <code>SV8T=1</code> for 15 s after a CO event. Close is blocked while <code>SV8T=1</code>. OUT3 (SPRING CHG lamp) energises.</td></tr>
+  </table>
+
+  <h3>O-0.3s-CO-15s-CO Timing Sequence</h3>
+  <div class="svg-wrap">
+    <svg viewBox="0 0 760 310" style="width:100%;max-width:760px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="11">
+
+      <text x="10" y="18" font-size="12" font-weight="bold" fill="#1a3a5c">Spring Charge — O-0.3s-CO-15s-CO Sequence</text>
+
+      <!-- Signal row labels -->
+      <text x="10" y="50"  fill="#374151" font-size="10">IN1 / LB1</text>
+      <text x="10" y="80"  fill="#374151" font-size="10">TRIP (state)</text>
+      <text x="10" y="110" fill="#374151" font-size="10">SV6T (0.3s)</text>
+      <text x="10" y="140" fill="#374151" font-size="10">SV8T (15s)</text>
+      <text x="10" y="170" fill="#374151" font-size="10">OUT1 / 52A</text>
+      <text x="10" y="200" fill="#374151" font-size="10">OUT3 (SPG)</text>
+
+      <!-- X axis: x=105 to x=750 represents time 0 to ~16s conceptually (not to scale - annotated) -->
+      <!-- Key time points (pixels): t0=105, trip1=130, open1=155, close_allow=195, close1=220, open2=250, spring_end=580, close2=610, open3=640 -->
+
+      <!-- Time markers (vertical dashed) -->
+      <!-- t_trip1: IN1 fires, t=105 -->
+      <line x1="105" y1="28" x2="105" y2="215" stroke="#d1d5db" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_open1: breaker opens (+100ms), t=155 -->
+      <line x1="155" y1="28" x2="155" y2="215" stroke="#374151" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_dead_end: 0.3s dead time expires, t=225 -->
+      <line x1="225" y1="28" x2="225" y2="215" stroke="#2563a8" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_close1: first reclose, t=255 -->
+      <line x1="255" y1="28" x2="255" y2="215" stroke="#16a34a" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_closed1: breaker closed (+100ms), t=295 -->
+      <line x1="295" y1="28" x2="295" y2="215" stroke="#374151" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_retrp: fault→re-trip, t=310 -->
+      <line x1="310" y1="28" x2="310" y2="215" stroke="#dc2626" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_open2: breaker opens again (+100ms), t=350 -->
+      <line x1="350" y1="28" x2="350" y2="215" stroke="#374151" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_spring_end: 15s expires, t=660 -->
+      <line x1="660" y1="28" x2="660" y2="215" stroke="#d97706" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <!-- t_close2: second close, t=695 -->
+      <line x1="695" y1="28" x2="695" y2="215" stroke="#16a34a" stroke-width="1" stroke-dasharray="3,2"/>
+      <!-- t_closed2: breaker closed, t=740 -->
+      <line x1="740" y1="28" x2="740" y2="215" stroke="#374151" stroke-width="1" stroke-dasharray="3,2"/>
+
+      <!-- IN1/LB1: pulse at t_trip1 for ~30px, then pulse at t_retrp for ~30px -->
+      <rect x="105" y="38" width="30" height="14" rx="2" fill="#2563a8"/>
+      <rect x="310" y="38" width="30" height="14" rx="2" fill="#2563a8"/>
+      <line x1="105" y1="52" x2="750" y2="52" stroke="#d1d5db" stroke-width="1"/>
+
+      <!-- TRIP state: low 0→105, high 155→295, high 350→660+ -->
+      <!-- Low baseline -->
+      <rect x="105" y="68" width="50" height="14" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1" opacity="0.3"/>
+      <text x="130" y="78" text-anchor="middle" fill="#9ca3af" font-size="8">open↑</text>
+      <rect x="155" y="68" width="140" height="14" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1"/>
+      <text x="225" y="78" text-anchor="middle" fill="#7f1d1d" font-size="8">TRIP=1 (OPEN)</text>
+      <rect x="295" y="68" width="55" height="14" rx="2" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+      <text x="322" y="78" text-anchor="middle" fill="#14532d" font-size="8">CLOSED</text>
+      <rect x="350" y="68" width="310" height="14" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1"/>
+      <text x="505" y="78" text-anchor="middle" fill="#7f1d1d" font-size="8">TRIP=1 (OPEN) — spring charging</text>
+      <rect x="660" y="68" width="5" height="14" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1" opacity="0.3"/>
+      <rect x="695" y="68" width="45" height="14" rx="2" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+      <text x="717" y="78" text-anchor="middle" fill="#14532d" font-size="8">CLOSED</text>
+
+      <!-- SV6T (0.3s dead time): starts at t_open1=155, fires at t_dead_end=225 -->
+      <rect x="155" y="98" width="70" height="14" rx="2" fill="#dbeafe" stroke="#2563a8" stroke-width="1" opacity="0.5"/>
+      <text x="190" y="108" text-anchor="middle" fill="#1e3a8a" font-size="8">timing 0.3s</text>
+      <rect x="225" y="98" width="70" height="14" rx="2" fill="#2563a8" stroke="#2563a8" stroke-width="1"/>
+      <text x="260" y="108" text-anchor="middle" fill="white" font-size="8">SV6T=1</text>
+      <!-- drops at close, retriggers at re-open -->
+      <rect x="350" y="98" width="70" height="14" rx="2" fill="#dbeafe" stroke="#2563a8" stroke-width="1" opacity="0.5"/>
+      <text x="385" y="108" text-anchor="middle" fill="#1e3a8a" font-size="8">timing 0.3s</text>
+      <rect x="420" y="98" width="240" height="14" rx="2" fill="#2563a8" stroke="#2563a8" stroke-width="1"/>
+      <text x="540" y="108" text-anchor="middle" fill="white" font-size="8">SV6T=1 (dead time satisfied)</text>
+      <rect x="695" y="98" width="55" height="14" rx="2" fill="#2563a8" stroke="#2563a8" stroke-width="1" opacity="0.6"/>
+
+      <!-- SV8T (15s spring charge): starts at t_open2=350, ends at t_spring_end=660 -->
+      <rect x="350" y="128" width="310" height="14" rx="2" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+      <text x="505" y="138" text-anchor="middle" fill="#78350f" font-size="8">SV8T=1 — SPRING CHARGING — 15 s</text>
+
+      <!-- OUT1/52A: closed to t_open1, open t_open1→t_closed1, closed t_closed1→t_open2, open t_open2→t_closed2 -->
+      <rect x="105" y="158" width="50" height="14" rx="2" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+      <text x="130" y="168" text-anchor="middle" fill="#14532d" font-size="8">CLOSED</text>
+      <rect x="155" y="158" width="140" height="14" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1"/>
+      <text x="225" y="168" text-anchor="middle" fill="#7f1d1d" font-size="8">OPEN</text>
+      <rect x="295" y="158" width="55" height="14" rx="2" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+      <text x="322" y="168" text-anchor="middle" fill="#14532d" font-size="8">CLD</text>
+      <rect x="350" y="158" width="345" height="14" rx="2" fill="#fee2e2" stroke="#dc2626" stroke-width="1"/>
+      <text x="522" y="168" text-anchor="middle" fill="#7f1d1d" font-size="8">OPEN</text>
+      <rect x="695" y="158" width="55" height="14" rx="2" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>
+      <text x="717" y="168" text-anchor="middle" fill="#14532d" font-size="8">CLOSED</text>
+
+      <!-- OUT3 (SPRING CHG): same window as SV8T -->
+      <rect x="350" y="188" width="310" height="14" rx="2" fill="#fed7aa" stroke="#d97706" stroke-width="1.5"/>
+      <text x="505" y="198" text-anchor="middle" fill="#7c2d12" font-size="8">OUT3 energised — SPRING CHG lamp ON</text>
+
+      <!-- Time axis -->
+      <line x1="105" y1="215" x2="750" y2="215" stroke="#374151" stroke-width="1.5"/>
+
+      <!-- Time annotations below axis -->
+      <text x="105" y="228" text-anchor="middle" fill="#374151" font-size="9">Trip</text>
+      <text x="155" y="228" text-anchor="middle" fill="#374151" font-size="9">Breaker</text>
+      <text x="155" y="238" text-anchor="middle" fill="#374151" font-size="9">opens</text>
+      <text x="225" y="228" text-anchor="middle" fill="#2563a8" font-size="9">+0.3 s</text>
+      <text x="225" y="238" text-anchor="middle" fill="#2563a8" font-size="9">(close OK)</text>
+      <text x="295" y="228" text-anchor="middle" fill="#16a34a" font-size="9">Reclose</text>
+      <text x="350" y="228" text-anchor="middle" fill="#dc2626" font-size="9">Re-trip</text>
+      <text x="350" y="238" text-anchor="middle" fill="#dc2626" font-size="9">(CO done)</text>
+      <text x="505" y="228" text-anchor="middle" fill="#d97706" font-size="9">← 15 s spring charge →</text>
+      <text x="660" y="228" text-anchor="middle" fill="#d97706" font-size="9">Spring</text>
+      <text x="660" y="238" text-anchor="middle" fill="#d97706" font-size="9">ready</text>
+      <text x="717" y="228" text-anchor="middle" fill="#16a34a" font-size="9">2nd close</text>
+
+      <!-- Not-to-scale note -->
+      <text x="375" y="258" text-anchor="middle" fill="#6b7280" font-size="9" font-style="italic">Note: diagram not to scale — 15 s spring charge is much longer than 0.3 s dead time</text>
+
+      <!-- Close-allowed annotation with bracket -->
+      <line x1="225" y1="244" x2="350" y2="244" stroke="#2563a8" stroke-width="1"/>
+      <line x1="225" y1="241" x2="225" y2="247" stroke="#2563a8" stroke-width="1"/>
+      <line x1="350" y1="241" x2="350" y2="247" stroke="#2563a8" stroke-width="1"/>
+      <text x="287" y="256" text-anchor="middle" fill="#2563a8" font-size="8">Close window</text>
+    </svg>
+  </div>
+
+  <h3>Operating Rules</h3>
+  <ul>
+    <li><strong>First close attempt:</strong> Only allowed ≥ 0.3 s after the breaker opened (SV6T=1). Assert IN2 or press MAN CLOSE.</li>
+    <li><strong>Spring charge starts:</strong> If the fault is still present and the RUT re-trips within 1 s of the close, SV8T asserts and blocks the close path for 15 s. OUT3 (SPRING CHG lamp) illuminates.</li>
+    <li><strong>Second close attempt:</strong> Allowed once SV8T drops (OUT3 goes off) — and also once 0.3 s has elapsed since the re-trip (which will always be satisfied by then).</li>
+    <li><strong>Third trip without close:</strong> If the second reclose also re-trips, the breaker stays open. SV8 triggers again for another 15 s. There is no lockout in V0.6 — the sequence can repeat.</li>
+  </ul>
+
+  <div class="note"><strong>Testing tip:</strong> For tests that do not require spring charge simulation, the behaviour is transparent — the 0.3 s dead time and 15 s block only activate if there is a CO event. A simple O → IN2 close sequence (fault clears before reclose) bypasses both timers.</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════ 12. SER -->
+<section id="ser">
+  <h2>12. Retrieving Event Records</h2>
+  <p>The SEL-551 stores a Sequential Events Recorder (SER) log capturing all transitions of:</p>
+  <table>
+    <tr><th>Signal</th><th>What it captures</th></tr>
+    <tr><td><code>TRIP</code></td><td>Breaker state changes (open / close)</td></tr>
+    <tr><td><code>IN1</code></td><td>External trip commands received</td></tr>
+    <tr><td><code>IN2</code></td><td>External close commands received</td></tr>
+    <tr><td><code>LB1</code></td><td>Manual trip (front panel local control)</td></tr>
+    <tr><td><code>LB2</code></td><td>Manual close (front panel local control)</td></tr>
+    <tr><td><code>SV5T</code></td><td>Operating timer fired — 100 ms after trip or close command</td></tr>
+    <tr><td><code>SV6T</code></td><td>Dead time timer — 0.3 s after breaker opened (close now permitted)</td></tr>
+    <tr><td><code>SV8T</code></td><td>Spring charge timer — 15 s block after CO operation</td></tr>
+  </table>
+
+  <h3>Serial Terminal Commands</h3>
+  <pre>SER       — print Sequential Events Recorder log
+EVE       — list stored event reports
+EVE n     — print event report number n</pre>
+  <p>SER timestamps allow post-test verification of actual timing behaviour.</p>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 13. NOTES -->
+<section id="notes">
+  <h2>13. Limitations and Notes</h2>
+  <table>
+    <tr><th>#</th><th>Note</th></tr>
+    <tr>
+      <td>1</td>
+      <td><strong>No CT/VT connections.</strong> Do not connect current or voltage transformers while the relay is configured as a dummy breaker. All overcurrent protection elements are disabled.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><strong>Hardware contact delay (~8 ms).</strong> Output relay contacts have a hardware operate time of approximately 8 ms in addition to the programmed timer. Total operating time ≈ 108 ms at the 100 ms setting. This is consistent with real breaker behaviour and is measurable via the SER.</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><strong>Minimum trip duration (TDURD = 3 cycles / 60 ms).</strong> The TRIP latch will not unlatch less than 60 ms after it sets. In practice this never constrains close timing since the close timer adds 100 ms on top.</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><strong>Power-loss behaviour.</strong> If control power is lost, all output contacts de-energise. OUT1 (52A) opens — the Relay sees the breaker as OPEN. Fail-open / fail-safe.</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><strong>Input debounce (0.25 cycle / ~5 ms).</strong> The SEL-551 optoisolated inputs have a built-in 0.25-cycle debounce filter. Transients shorter than 5 ms will not be seen by the relay.</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><strong>Opening and closing delays are equal.</strong> A single timer (<code>SV5PU</code>) governs both. The dead-time (0.3 s) and spring-charge (15 s) timers are separate — only <code>SV5PU</code> affects operating time. If independent open and close delays are required, refer to the design plan.</td>
+    </tr>
+  </table>
+</section>
+
+</main>
+</body>
+</html>
