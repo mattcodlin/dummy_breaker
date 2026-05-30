@@ -27,11 +27,11 @@ ER1,"TRIP + IN1 + IN2"
 ER2,"0"
 SV1,"IN1 * !TRIP"
 SV2,"IN2 * TRIP * !IN1"
-SV3,"0"
-SV4,"0"
+SV3,"IN1 * IN2 * TRIP"
+SV4,"!(SV1 + SV2 + SV3)"
 SV5,"IN1"
 SV6,"IN2 * !IN1"
-SV7,"0"
+SV7,"!SV7T"
 SV8,"0"
 SV9,"0"
 SV10,"0"
@@ -45,9 +45,9 @@ OUT3,"SV1"
 OUT4,"SV2"
 DP1,"TRIP"
 DP2,"SV1"
-DP3,"SV2"
-DP4,"IN1"
-DP5,"IN2"
-DP6,"0"
+DP3,"SV3"
+DP4,"SV2"
+DP5,"SV4 * !SV7T"
+DP6,"SV4 * SV7T"
 DP7,"0"
 DP8,"0"
