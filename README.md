@@ -33,15 +33,24 @@ The repository is organized into settings files and reference documentation:
     ├── DUMMY_BREAKER_PLAN.md             # Logic design specifications
     ├── DUMMY_BREAKER_PLAN.html           # Logic design specifications (HTML version for GH Pages)
     ├── DUMMY_BREAKER_TECHNICIAN_GUIDE.md # Technician connection and operation guide
-    └── DUMMY_BREAKER_TECHNICIAN_GUIDE.html # Connection and operation guide (HTML version for GH Pages)
+    ├── DUMMY_BREAKER_TECHNICIAN_GUIDE.html # Connection and operation guide (HTML version for GH Pages)
+    ├── index.html                        # Automatic redirect to Technician Guide
+    └── .nojekyll                         # Bypasses Jekyll build processing
 ```
 
 ---
 
-## Automated GitHub Pages Hosting
+## Setting Up GitHub Pages
 
-This repository is configured with a GitHub Actions workflow that automatically publishes the contents of the `docs/` folder to GitHub Pages whenever changes are pushed to the `main` branch. 
+This repository is set up to use GitHub's native Pages branch deployer to serve documentation directly from the `docs/` folder.
 
-The HTML documentation is hosted at:
-- **Technician Guide:** `https://mattcodlin.github.io/dummy_breaker/DUMMY_BREAKER_TECHNICIAN_GUIDE.html`
-- **Logic Design Plan:** `https://mattcodlin.github.io/dummy_breaker/DUMMY_BREAKER_PLAN.html`
+To enable it:
+1. Navigate to your repository on **GitHub**.
+2. Click on **Settings** in the top navigation tab.
+3. Select **Pages** from the left sidebar menu.
+4. Under **Build and deployment**:
+   - Set **Source** to **Deploy from a branch**.
+   - Under **Branch**, select `main` and set the folder dropdown to `/docs`.
+   - Click **Save**.
+
+Once configured, GitHub will automatically compile the site from the `/docs` folder on every push.
